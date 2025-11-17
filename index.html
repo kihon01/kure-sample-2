@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ジェネリック医薬品ダッシュボード</title>
+    <title>総トン数別入港数ダッシュボード</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>ジェネリック医薬品ダッシュボード</h1>
+            <h1>総トン数別入港数ダッシュボード</h1>
         </header>
 
         <!-- CSVアップロードセクション -->
@@ -25,43 +25,43 @@
         <!-- サマリーカード -->
         <div id="summarySection" class="summary-section hidden">
             <div class="card">
-                <h3>先発品種類数</h3>
-                <p class="card-value" id="originalCount">-</p>
+                <h3>総入港数</h3>
+                <p class="card-value" id="totalShips">-</p>
             </div>
             <div class="card">
-                <h3>後発品種類数</h3>
-                <p class="card-value" id="genericCount">-</p>
+                <h3>年度データ数</h3>
+                <p class="card-value" id="yearCount">-</p>
             </div>
             <div class="card">
-                <h3>総数量</h3>
-                <p class="card-value" id="totalQuantity">-</p>
+                <h3>平均年間入港数</h3>
+                <p class="card-value" id="avgShips">-</p>
             </div>
             <div class="card">
-                <h3>平均薬価差</h3>
-                <p class="card-value" id="avgPriceDiff">-</p>
+                <h3>最高年入港数</h3>
+                <p class="card-value" id="maxShips">-</p>
             </div>
         </div>
 
         <!-- チャートセクション -->
         <div id="chartsSection" class="charts-section hidden">
-            <!-- 後発品医薬品 使用数量トップ10 -->
+            <!-- トン数別入港数の推移 -->
             <div class="chart-container">
-                <h2>後発品医薬品 使用数量トップ10</h2>
-                <canvas id="top10Chart"></canvas>
+                <h2>トン数別入港数の推移</h2>
+                <canvas id="trendChart"></canvas>
             </div>
 
-            <!-- 先発品と後発品の薬価比較 -->
+            <!-- 最新年度のトン数別入港数 -->
             <div class="chart-container">
-                <h2>先発品と後発品の薬価比較</h2>
-                <canvas id="priceComparisonChart"></canvas>
+                <h2>最新年度のトン数別入港数</h2>
+                <canvas id="latestYearChart"></canvas>
             </div>
         </div>
 
-        <!-- 後発品医薬品別 数量分布 (全幅) -->
+        <!-- トン数別積み上げグラフ (全幅) -->
         <div id="distributionSection" class="distribution-section hidden">
             <div class="chart-container-full">
-                <h2>後発品医薬品別 数量分布</h2>
-                <canvas id="quantityDistributionChart"></canvas>
+                <h2>年度別トン数別入港数の推移（積み上げ）</h2>
+                <canvas id="stackedChart"></canvas>
             </div>
         </div>
 
@@ -81,14 +81,9 @@
                 <table id="dataTable">
                     <thead>
                         <tr>
-                            <th>年月</th>
-                            <th>先発医薬品名</th>
-                            <th>先発医薬品薬価</th>
-                            <th>後発医薬品名</th>
-                            <th>後発医薬品薬価</th>
-                            <th>数量</th>
-                            <th>単位</th>
-                            <th>薬価差</th>
+                            <th>年度</th>
+                            <th>トン数区分</th>
+                            <th>入港数</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody">

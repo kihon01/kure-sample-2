@@ -4,6 +4,8 @@ let filteredData = [];
 let currentPage = 1;
 let itemsPerPage = 25;
 let charts = {};
+let allYears = [];
+let tonnageCategories = [];
 
 // CSVファイルの読み込み
 document.getElementById("csvFile").addEventListener("change", function (e) {
@@ -15,7 +17,7 @@ document.getElementById("csvFile").addEventListener("change", function (e) {
     const text = e.target.result;
     parseCSV(text);
   };
-  reader.readAsText(file, "UTF-8");
+  reader.readAsText(file, "shift_jis");
 
   document.getElementById("uploadStatus").innerHTML =
     '<span style="color: #48bb78;">読み込み中...</span>';
@@ -24,31 +26,48 @@ document.getElementById("csvFile").addEventListener("change", function (e) {
 // CSVパース関数
 function parseCSV(text) {
   const lines = text.split("\n").filter((line) => line.trim());
-  const headers = lines[0].split(",");
+  const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
+
+  // トン数カテゴリーを抽出（ヘッダーから）
+  tonnageCategories = [];
+  const yearIndex = 0;
+  for (let i = 1; i < headers.length; i++) {
+    tonnageCategories.push(headers[i]);
+  }
 
   rawData = [];
+  allYears = [];
+
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(",");
-    if (values.length >= 7) {
-      rawData.push({
-        yearMonth: values[0].trim(),
-        originalDrugName: values[1].trim(),
-        originalDrugPrice: parseFloat(values[2]) || 0,
-        genericDrugName: values[3].trim(),
-        genericDrugPrice: parseFloat(values[4]) || 0,
-        quantity: parseFloat(values[5]) || 0,
-        unit: values[6].trim(),
-        priceDiff: (parseFloat(values[2]) || 0) - (parseFloat(values[4]) || 0),
-      });
+    const values = lines[i].split(",").map((v) => v.trim().replace(/"/g, ""));
+    if (values.length >= 2 && values[0]) {
+      const year = parseInt(values[0]);
+      allYears.push(year);
+
+      // 各トン数カテゴリーのデータを行として追加
+      for (let j = 1; j < values.length; j++) {
+        const category = headers[j];
+        const shipCount = parseInt(values[j]) || 0;
+
+        if (category && shipCount > 0) {
+          rawData.push({
+            year: year,
+            tonnage: category,
+            shipCount: shipCount,
+          });
+        }
+      }
     }
   }
 
+  // 年度を重複なく昇順にソート
+  allYears = [...new Set(allYears)].sort((a, b) => a - b);
   filteredData = [...rawData];
 
   if (rawData.length > 0) {
     document.getElementById(
       "uploadStatus"
-    ).innerHTML = `<span style="color: #48bb78;">✓ ${rawData.length}件のデータを読み込みました</span>`;
+    ).innerHTML = `<span style="color: #48bb78;">✓ ${allYears.length}年度のデータを読み込みました</span>`;
     updateDashboard();
   } else {
     document.getElementById("uploadStatus").innerHTML =
@@ -76,203 +95,89 @@ function updateDashboard() {
 
 // サマリーカード更新
 function updateSummaryCards() {
-  // 先発品種類数
-  const originalDrugs = new Set(rawData.map((d) => d.originalDrugName));
-  document.getElementById("originalCount").textContent = originalDrugs.size;
+  // 総入港数（すべてのデータの合計）
+  const totalShips = rawData.reduce((sum, d) => sum + d.shipCount, 0);
+  document.getElementById("totalShips").textContent = totalShips.toLocaleString();
 
-  // 後発品種類数
-  const genericDrugs = new Set(rawData.map((d) => d.genericDrugName));
-  document.getElementById("genericCount").textContent = genericDrugs.size;
+  // 年度データ数
+  document.getElementById("yearCount").textContent = allYears.length;
 
-  // 総数量
-  const totalQuantity = rawData.reduce((sum, d) => sum + d.quantity, 0);
-  document.getElementById("totalQuantity").textContent =
-    totalQuantity.toLocaleString();
+  // 平均年間入港数
+  const avgShips = Math.round(totalShips / allYears.length);
+  document.getElementById("avgShips").textContent = avgShips.toLocaleString();
 
-  // 平均薬価差
-  const avgPriceDiff =
-    rawData.reduce((sum, d) => sum + d.priceDiff, 0) / rawData.length;
-  document.getElementById(
-    "avgPriceDiff"
-  ).textContent = `¥${avgPriceDiff.toFixed(2)}`;
+  // 最高年入港数
+  const yearlyTotals = {};
+  rawData.forEach((d) => {
+    if (!yearlyTotals[d.year]) {
+      yearlyTotals[d.year] = 0;
+    }
+    yearlyTotals[d.year] += d.shipCount;
+  });
+  const maxShips = Math.max(...Object.values(yearlyTotals));
+  document.getElementById("maxShips").textContent = maxShips.toLocaleString();
 }
 
 // チャート更新
 function updateCharts() {
-  updateTop10Chart();
-  updatePriceComparisonChart();
-  updateQuantityDistributionChart();
+  updateTrendChart();
+  updateLatestYearChart();
+  updateStackedChart();
 }
 
-// 後発品医薬品 使用数量トップ10
-function updateTop10Chart() {
-  const quantityByGeneric = {};
-  rawData.forEach((d) => {
-    if (!quantityByGeneric[d.genericDrugName]) {
-      quantityByGeneric[d.genericDrugName] = 0;
-    }
-    quantityByGeneric[d.genericDrugName] += d.quantity;
+// トン数別入港数の推移グラフ
+function updateTrendChart() {
+  // 各トン数カテゴリーについて、年度ごとの入港数を集計
+  const datasets = [];
+  const colors = [
+    "rgba(102, 126, 234, 0.8)",
+    "rgba(246, 173, 85, 0.8)",
+    "rgba(72, 187, 120, 0.8)",
+    "rgba(245, 101, 101, 0.8)",
+    "rgba(171, 102, 205, 0.8)",
+    "rgba(237, 137, 54, 0.8)",
+    "rgba(72, 187, 120, 0.8)",
+    "rgba(66, 153, 225, 0.8)",
+  ];
+
+  tonnageCategories.forEach((category, index) => {
+    const data = allYears.map((year) => {
+      const record = rawData.find((d) => d.year === year && d.tonnage === category);
+      return record ? record.shipCount : 0;
+    });
+
+    datasets.push({
+      label: category,
+      data: data,
+      borderColor: colors[index % colors.length],
+      backgroundColor: colors[index % colors.length].replace("0.8", "0.1"),
+      borderWidth: 2,
+      tension: 0.4,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+    });
   });
 
-  const sorted = Object.entries(quantityByGeneric)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
+  if (charts.trend) charts.trend.destroy();
 
-  const labels = sorted.map((d) => d[0]);
-  const data = sorted.map((d) => d[1]);
-
-  if (charts.top10) charts.top10.destroy();
-
-  const ctx = document.getElementById("top10Chart").getContext("2d");
-  charts.top10 = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: "使用数量",
-          data: data,
-          backgroundColor: "rgba(102, 126, 234, 0.8)",
-          borderColor: "rgba(102, 126, 234, 1)",
-          borderWidth: 1,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: {
-          display: false,
-        },
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-        },
-      },
-    },
-  });
-}
-
-// 先発品と後発品の薬価比較
-function updatePriceComparisonChart() {
-  // 薬価が高い順にソートして上位10件を取得
-  const sortedByPrice = [...rawData]
-    .sort((a, b) => b.originalDrugPrice - a.originalDrugPrice)
-    .slice(0, 10);
-
-  const labels = sortedByPrice.map((d) => d.originalDrugName.substring(0, 20));
-  const originalPrices = sortedByPrice.map((d) => d.originalDrugPrice);
-  const genericPrices = sortedByPrice.map((d) => d.genericDrugPrice);
-
-  if (charts.priceComparison) charts.priceComparison.destroy();
-
-  const ctx = document.getElementById("priceComparisonChart").getContext("2d");
-  charts.priceComparison = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: "先発品薬価",
-          data: originalPrices,
-          backgroundColor: "rgba(246, 173, 85, 0.8)",
-          borderColor: "rgba(246, 173, 85, 1)",
-          borderWidth: 1,
-        },
-        {
-          label: "後発品薬価",
-          data: genericPrices,
-          backgroundColor: "rgba(102, 126, 234, 0.8)",
-          borderColor: "rgba(102, 126, 234, 1)",
-          borderWidth: 1,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: {
-          display: true,
-          position: "top",
-        },
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-        },
-      },
-    },
-  });
-}
-
-// 後発品医薬品別 数量分布（折れ線グラフ、15項目）
-function updateQuantityDistributionChart() {
-  // 後発品ごとに数量を集計
-  const quantityByGeneric = {};
-  rawData.forEach((d) => {
-    if (!quantityByGeneric[d.genericDrugName]) {
-      quantityByGeneric[d.genericDrugName] = 0;
-    }
-    quantityByGeneric[d.genericDrugName] += d.quantity;
-  });
-
-  // 数量が多い順にソートして上位15件を取得
-  const sorted = Object.entries(quantityByGeneric)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15);
-
-  const labels = sorted.map((d) => d[0]);
-  const data = sorted.map((d) => d[1]);
-
-  if (charts.quantityDistribution) charts.quantityDistribution.destroy();
-
-  const ctx = document
-    .getElementById("quantityDistributionChart")
-    .getContext("2d");
-  charts.quantityDistribution = new Chart(ctx, {
+  const ctx = document.getElementById("trendChart").getContext("2d");
+  charts.trend = new Chart(ctx, {
     type: "line",
     data: {
-      labels: labels,
-      datasets: [
-        {
-          label: "数量",
-          data: data,
-          borderColor: "rgba(102, 126, 234, 1)",
-          backgroundColor: "rgba(102, 126, 234, 0.1)",
-          borderWidth: 3,
-          fill: true,
-          tension: 0.4,
-          pointRadius: 5,
-          pointHoverRadius: 7,
-          pointBackgroundColor: "rgba(102, 126, 234, 1)",
-          pointBorderColor: "#fff",
-          pointBorderWidth: 2,
-        },
-      ],
+      labels: allYears.map((y) => y.toString()),
+      datasets: datasets,
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
+      maintainAspectRatio: true,
       plugins: {
         legend: {
           display: true,
           position: "top",
-        },
-        tooltip: {
-          mode: "index",
-          intersect: false,
+          maxHeight: 50,
         },
       },
       scales: {
-        x: {
-          ticks: {
-            maxRotation: 45,
-            minRotation: 45,
-          },
-        },
         y: {
           beginAtZero: true,
           ticks: {
@@ -282,10 +187,118 @@ function updateQuantityDistributionChart() {
           },
         },
       },
-      interaction: {
-        mode: "nearest",
-        axis: "x",
-        intersect: false,
+    },
+  });
+}
+
+// 最新年度のトン数別入港数グラフ
+function updateLatestYearChart() {
+  const latestYear = allYears[allYears.length - 1];
+  const latestData = rawData.filter((d) => d.year === latestYear);
+
+  const labels = latestData.map((d) => d.tonnage);
+  const data = latestData.map((d) => d.shipCount);
+
+  if (charts.latestYear) charts.latestYear.destroy();
+
+  const ctx = document.getElementById("latestYearChart").getContext("2d");
+  charts.latestYear = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: latestYear.toString() + "年度",
+          data: data,
+          backgroundColor: "rgba(72, 187, 120, 0.8)",
+          borderColor: "rgba(72, 187, 120, 1)",
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: true,
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function (value) {
+              return value.toLocaleString();
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// 年度別トン数別入港数の推移（積み上げグラフ）
+function updateStackedChart() {
+  const datasets = [];
+  const colors = [
+    "rgba(102, 126, 234, 0.8)",
+    "rgba(246, 173, 85, 0.8)",
+    "rgba(72, 187, 120, 0.8)",
+    "rgba(245, 101, 101, 0.8)",
+    "rgba(171, 102, 205, 0.8)",
+    "rgba(237, 137, 54, 0.8)",
+    "rgba(66, 153, 225, 0.8)",
+    "rgba(237, 137, 54, 0.8)",
+  ];
+
+  tonnageCategories.forEach((category, index) => {
+    const data = allYears.map((year) => {
+      const record = rawData.find((d) => d.year === year && d.tonnage === category);
+      return record ? record.shipCount : 0;
+    });
+
+    datasets.push({
+      label: category,
+      data: data,
+      backgroundColor: colors[index % colors.length],
+      borderColor: colors[index % colors.length].replace("0.8", "1"),
+      borderWidth: 0,
+    });
+  });
+
+  if (charts.stacked) charts.stacked.destroy();
+
+  const ctx = document.getElementById("stackedChart").getContext("2d");
+  charts.stacked = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: allYears.map((y) => y.toString()),
+      datasets: datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: "top",
+          maxHeight: 50,
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            callback: function (value) {
+              return value.toLocaleString();
+            },
+          },
+        },
       },
     },
   });
@@ -303,14 +316,9 @@ function updateTable() {
   pageData.forEach((row) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-            <td>${row.yearMonth}</td>
-            <td>${row.originalDrugName}</td>
-            <td>¥${row.originalDrugPrice.toFixed(2)}</td>
-            <td>${row.genericDrugName}</td>
-            <td>¥${row.genericDrugPrice.toFixed(2)}</td>
-            <td>${row.quantity.toLocaleString()}</td>
-            <td>${row.unit}</td>
-            <td>¥${row.priceDiff.toFixed(2)}</td>
+            <td>${row.year}</td>
+            <td>${row.tonnage}</td>
+            <td>${row.shipCount.toLocaleString()}</td>
         `;
     tbody.appendChild(tr);
   });
